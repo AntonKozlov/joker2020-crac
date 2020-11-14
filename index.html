@@ -9,15 +9,280 @@
   <body>
     <textarea id="source">
 
-class: title, center, middle
+class: title
+count: false
 
+.content[
+# .center[Coordinated Restore<br>at Checkpoint]
+
+## .center[Быстрый старт OpenJDK]
+
+.left.sign[Антон Козлов]
+]
+---
+# Java в Embedded (и микросервисах)
+
+Linux (arm32, arm64,..)
+
+Цель: запустить Java приложение
+* как можно быстрее
+* готовое к работе
+* затратив как можно меньше процессорного времени
+
+Медленный процессор:
+  * долгая интерпретация, сбор статистики и JIT-компиляция
+  * недостаток ядер для фоновой компиляции
+
+Медленные накопители: узкая шина, задержки при (хаотической) загрузки классов
+
+---
+# Что можно сделать
+
+(App) Class Data Sharing
+
+Ahead-of-Time compilation
+
+Graal Native image
+
+---
+# CRIU
+
+CRIU: Checkpoint/Restore In Userspace
+* Checkpoint: сохранить состояние процесса
+* Restore: создать процесс из сохраненного состояния
+
+Управление контейнерами: миграция, репликация,..
+
+<!--
+Checkpoint: сохранить состояние процесса
+Restore: создать процесс из сохраненного состояния
+In Userspace
+Одно из основных назначений: миграция контейнеров
+Состояние дерева процессов
+Состояние или ссылки на окружение: файлов, каналов, сокетов, терминалов,..
+
+Checkpoint: сохранить состояние процесса
+Restore: создать процесс из сохраненного состояния
+In Userspace (на Linux, при наличии некоторых интерфейсов)
+Основное назначение: миграция контейнеров
+Состояние дерева процессов
+Состояние IPC механизмов: pipe’ов, сокетов, терминалов,..
+Требует root привилегий (используются потенциально опасные механизмы)
+-
+Checkpoint - сохранить состояние процесса
+как coredump
+Restore - создать процесс из сохраненного состояния
+…
+In Userspace - по большей части в пользовательском режиме
+в ядре Linux есть вспомогательные функции
+Одно из основных назначений: миграция контейнеров
+Состояние дерева процессов
+Состояние IPC механизмов: pipe’ов, сокетов, терминалов,..
+Требует root привилегий (используются потенциально опасные механизмы)
+-
+Посмотрим на coredump
+Память
+Треды
+Состояния
+Без:
+Файлов
+Ресурсов ОС (файловых дескрипторов, сокетов)
+-->
+
+---
+# Java + CRIU
+
+Если бы мы могли восстановить Java приложение…
+
+* Классы загружены, проинициализированы
+* JIT-компилятор всё скомпилировал, мы на пиковой производительности
+
+Проблема: состояние
+* Внутреннее:
+  * Прошлая инициализация в возможно неактуальных условиях
+* Внешнее (сторонние сервисы и связи с ними):
+  * Необходима реинициализация
+  * Возможны конфликты при запуске нескольких экземпляров Java приложения
+
+---
 # Coordinated Restore at Checkpoint
-## Быстрый старт OpenJDK
 
-.right[Антон Козлов<br>Azul Systems, Inc]
+Приложение и Java вместе работают для Checkpoint/Restore
+
+* Приложение управляет ресурсами и состоянием самостоятельно
+  * использует механизм для оповещения, расширяемый
+  * может отменить Checkpoint
+* Java помогает находить опасные состояния
+  * обнаруживает ресурсы ОС
+      * сокеты
+      * открытые файлы
+      * межпроцессные взаимодействия
+  * может отменить Checkpoint
+
+
+---
+# Как соотносится с другими технологиями
+
+Time/space trade-off: разменять время на память
+
+Graal Native Image:
+  * выполнить неизменные части программы во время компиляции (в том числе инициализацию)
+  * статическая компиляция/profile-guided-optimization/динамическая рекомпиляция (VM)
+
+CRaC
+  * выполнить программу
+  * полная JVM после Restore
+
+
+---
+# Реализация
+
+[github.com/CRaC](https://github.com/CRaC/docs#readme)
+<br/>
+<br/>
+* CRaC API:
+  * Оповещение о Checkpoint/Restore
+  * Проверка на связи с внешним миром
+* Реализация на CRIU
+* Улучшенная CRIU
+* Реальные примеры использования
+
+\+ Билды и тесты
+
+---
+# Пример
+
+```java
+public class Test {
+    public static void main(String[] args) throws Exception {
+        System.out.println("Initializing...");
+        Thread.sleep(3_000);
+        System.out.println("Done. Waiting for request");
+        System.in.read();
+        System.out.println("Compute " + args.length);
+    }
+}
+```
+
+---
+# Пример Jetty 
+
+```java
+import org.eclipse.jetty.server.Server;
+
+class ServerManager {
+    Server server;
+
+    public ServerManager(int port, Handler handler) throws Exception {
+        server = new Server(8080);
+        server.setHandler(handler);
+        server.start();
+    }
+}
+```
+
+---
+# Пример Jetty c CRaC API
+
+```java
+import jdk.crac.Context;
+import jdk.crac.Core;
+import jdk.crac.Resource;
+
+import org.eclipse.jetty.server.Server;
+
+class ServerManager implements Resource {
+    Server server;
+
+    @Override
+    public void beforeCheckpoint(Context<? extends Resource> context) throws Exception {
+        server.stop();
+    }
+
+    @Override
+    public void afterRestore(Context<? extends Resource> context) throws Exception {
+        server.start();
+    }
+
+    public ServerManager(int port, Handler handler) throws Exception {
+        ...
+        Core.getGlobalContext().register(this);
+    }
+}
+```
+---
+# Proof-of-Concepts
+
+Фреймворки
+* Spring Boot (и другие на основе Tomcat Embed)
+* Quarkus
+* Micronaut
+
+Библиотеки
+* JDBC Connection Pool
+
+Приложения
+* Tomcat Catalina
+
+---
+class: center, middle
+
+![Startup graph](startup.png)
+
+---
+class: center, middle
+
+![Quarkus response time graph](quarkus.png)
+
+---
+# Оптимизация производительности
+
+.center[
+![Deploy flow](flow.png)
+]
+
+---
+# Координация - сложно?
+
+Мы пользуемся фреймворками, библиотеками и часто не управляем ресурсами
+
+Координация требует удивительно мало кода
+* В “спокойном” режиме (событийно-ориентированное приложение ожидает запросы): отпустить ресурс и приостанавливать доступ к нему
+* В “активном” режиме (запросы исполняются прямо сейчас)
+  * Блокировать Checkpoint
+  * Предоставить mock для ресурса
+
+А может быть, этот код уже написан
+* Fault-tolerance: восстанавливаться после исключений
+
+---
+background-image: url(tomcat-diff.png)
+
+---
+# CRaC
+
+* Сохранить образ программы, использовать для развертывания
+* Развертывание быстрое, Java не требует прогрева
+* Программа может адаптироваться к новому окружению
+* CRaC помогает ловить возможные проблемы при сохранении
+
+---
+# CRIU: Checkpoint
+
+.center[![](criu-checkpoint.drawio.png)]
+
+---
+# CRIU: Restore
+
+<!--.center[![](criu-checkpoint.drawio.png)]-->
 
 ---
 # 
+
+---
+# Процесс
+
+.center.middle[![](process.drawio.png)]
 
     </textarea>
     <script src="slides.js" type="text/javascript"></script>

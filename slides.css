@@ -8,73 +8,76 @@
 	/*font-weight: normal;*/
 /*}*/
 
-@font-face {
- font-family: "DjvuSansMono";
- src: url("./DejaVuSansMono.ttf");
+html {
+	font-size: 32px;
+}
+.remark-slide-content {
+	font-family: 'Roboto', sans-serif;
+	padding: 16px 48px 16px 48px;
+
+	font-size: 1rem;
+	background-image: url(slide-bg.png);
+	background-size: contain;
 }
 
-.remark-code, .remark-inline-code { 
-	font-family: 'DjvuSansMono'
-}
-
-.remark-slide .title h2 {
-	font-size: 30px;
-}
-
-.remark-slide h2 {
+.remark-slide-number {
 	font-size: 20px;
 }
 
-.fsmall {
-	font-size: 75%;
+.remark-slide-content p {
+	margin: 1em 0em 0em 0em;
 }
 
-.it {
-	font-style: italic;
+.remark-slide-content ul {
+	margin: 0em 0em 0em 0em;
 }
 
-.def {
-	font-style: italic;
+.remark-slide-content h1 {
+	color: dark-blue-1;
 }
 
-.fitimg img {
-	max-width: 100%;
+.remark-slide-content pre {
+	margin: 1em 0em 0em 0em;
 }
 
-.f75img img {
-	max-width: 75%;
+@font-face {
+	font-family: "DjvuSansMono";
+	src: url("./DejaVuSansMono.ttf");
 }
 
-.sub {
-	font-size: .83em;
-	vertical-align: sub;
+.remark-code, .remark-inline-code {
+	font-family: 'DjvuSansMono'
 }
 
-.sup {
-	font-size: .83em;
-	vertical-align: super;
+/* title */
+
+.remark-slide-content.title {
+	background-image: url(title-bg.png);
+	background-size: contain;
 }
 
-
-.left {
-	float: left;
-	margin-right: 2em;
+.remark-slide-content.title .content {
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
 }
 
-.right {
-	float: right;
-	margin-left: 2em;
+.remark-slide-content.title {
+	color: white;
 }
 
-.clear {
-	clear: both;
+.remark-slide-content.title h1 {
+	font-size: 3em;
 }
 
-table {
-    border-collapse: collapse;
+.remark-slide-content.title .sign {
+	display: inline-block;
+	align-self: flex-end;
+	margin-bottom: 0.4em;
+
 }
 
-table, th, td {
-    border: 1px solid black;
-    padding: 5px;
+.remark-slide-content.title .remark-slide-number {
+	display: none;
 }
