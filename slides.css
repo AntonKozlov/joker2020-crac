@@ -8,14 +8,11 @@
 	/*font-weight: normal;*/
 /*}*/
 
-html {
-	font-size: 32px;
-}
 .remark-slide-content {
 	font-family: 'Roboto', sans-serif;
 	padding: 16px 48px 16px 48px;
 
-	font-size: 1rem;
+	font-size: 32px;
 	background-image: url(slide-bg.png);
 	background-size: contain;
 }
@@ -38,6 +35,12 @@ html {
 
 .remark-slide-content pre {
 	margin: 1em 0em 0em 0em;
+}
+
+.remark-slide-content .floatright {
+	float: right;
+	margin-right: 130px;
+	margin-top: 50px;
 }
 
 @font-face {

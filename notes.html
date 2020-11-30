@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<script>window.texme = { 
+  style: 'none',
+  useMathJax: false,
+  protectMath: false,
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/texme@0.9.0"></script><textarea>
+
+# Заметки
+
+## About
+
+Инженер в Azul Systems. В компании работаю над проектами на основе OpenJDK. Принимал активное участие в портах JDK на ARM32, PPC32. Сейчас занимаюсь всем подряд, особенно активно оптимизациями для ускорения запуска и достижения производительности.
+
+Engineer in Azul Systems. In the company, I work on OpenJDK-based projects. Previously contributed to ARM32, PPC32 ports. Now I do various things, specializing in start-up and warm-up optimizations.
+
+## Description
+
+Знакомство с проектом Coordinated Restore at Checkpoint. Сейчас находится в активной разработке, цель: запускать Java приложения за десятки миллисекунд. Проект не связан с GraalVM Native Image, поэтому не имеет свойственных проблем для использования, зато приносит новые. Доклад может быть интересен интересующимся экспериментальными технологиями в Java, а так же разработчикам фреймворков и приложений, для которых важно время запуска и разогрева.
+
+An introduction to the Coordinated Restore at Checkpoint project. Now actively developed with the eventual goal to start Java applications in tens of milliseconds. The project does not relate to the GraalVM Native Image, so it does not have some usual usability problems, but it brings other ones. The talk is for those who are interested in experimental Java technologies, as well as for framework and application developers who are looking for a quick start-up and warm-up.
+
+## План
+
+План:
+1. Введение, контекст. Использование Java в Embedded, проблема скорости запуска и метрики. 
+2. Использование Checkpoint/Restore (CRIU) для ускорения запуска.
+3. Разбор проблем, что хотелось бы и чего сейчас нет.
+4. Решение проблем использования C/R -- модификация Java приложений для координации с OpenJDK: Сoordinated Restore at Checkpoint (CRaC)
+5. Концептуальное отличие от GraalVM Native Image, чем может быть лучше.
+6. Разбор примера приложения (на Jetty) для работы на CRaС OpenJDK, как увидеть что всё сломалось, починить и научиться запускать приложения за десятки мс.
+7. Обзор нового предлагаемого API
+8. Обзор изменений для Quarkus, Micronaut и Spring Boot. Что нужно делать в других фреймворках.
+9. Результаты запуска примеров на этих фреймворках, как добиться максимума.
+10. Как попробовать текущие наработки в своём прикладном проекте.
+11. Не только фреймворки, обзор отдельных примеров: Tomcat Container и JDBC Pool.
+12. Обзор реализации в JDK: идеи для сложных случаев
+13. Высокоуровневый обзор реализации, острые углы при использовании.
+14. Идеальные окружения для CRaC: где и как может быть полезен (архитектуры приложений и развёртываний). Дальнейшие работы и текущие workaround'ы.
+
+## Вопросы
+
+Windows/macos
+Docker
+
+время загрузки с диска
+
+размер образа
+
+размер хипа для 35 мс
+
+time to operational
+
+плато? -- время первой итерации
+
+rebber devops
+
+
+## CRaC introduction
+
+Hello,
+
+We would like to open a discussion about a new project focused on
+"Coordinated Restore at Checkpoint".
+
+A possible relevant project name might be Tubthumpting [9].
+
+Over the years, we [at Azul] have tinkered with various ways to improve java
+start-up time and warmup behavior for different use cases for such
+improvements. One of the interesting focus areas has been the "starting of
+a new instance" of an application that has already run instances using identical
+code, a similar expected profile, and potentially a similar initialization
+sequence in the past. This is a common scenario in modern application
+deployments, when e.g. rolling out new code in continuous deployment
+environment, and when e.g. elastically changing instance counts in e.g.
+auto-scaling situations.
+
+Checkpoint/Restore technologies have evolved in various forms over the past
+few years, and are available in the multiple forms, including e.g. CRIU [1]
+and Docker Checkpoint & Restore [2].  While Checkpoint/Restore capabilities
+have been shown to work across a wide range of applications for e.g. live
+process or application migration, there are various challenges present for
+their generic application for new instance deployment. Many of these
+challenges have to do with the need to deal with a checkpointed state that may
+not be validly reproducible when restoring multiple instances from the same
+checkpoint image.
+
+This is where Coordinate Restore at Checkpoint (CRaC) comes in. At a high
+level, CRaC aims to systemically address these challenges by facilitating
+explicit and intentional coordination between checkpointed applications and
+a checkpointing mechanism. Such coordination will allow applications to
+proactively discard problematic state ahead of checkpointing and to
+reestablish needed state upon restoration. [e.g. closing open file
+descriptors ahead of a checkpoint, and recreating and binding them after a
+restore].
+
+Coordination is a powerful enabler in this space. Contrary to the approaches
+attempting transparent, uncoordinated checkpoint/restore, CRaC's approach to
+the date has focused on assisting with the detection of situations that would
+prevent a successful checkpoint, and simply refusing to checkpoint if such
+conditions are identified. This approach leaves it up to the application
+frameworks and the applications themselves to remedy the situation during
+development, and before attempting actual deployment (or simply accept
+non-CRaC startup times since a restorable checkpoint state will not be
+available).
+
+In the Java arena, we aim to create a generic CRaC API that would allow
+applications and/or application frameworks to coordinate with an arbitrary
+checkpoint/restore mechanism, without being tied to a specific
+implementation or to the operational means by which checkpointing and
+restoration is achieved. Such an API would allow application frameworks
+(e.g. Tomcat, Quarkus, MicroNaut, etc.) to perform the needed coordination
+in a portable way, which would not require coding that is specific to a
+checkpoint/restore mechanism.  E.g. the same Tomcat CRaC coordination code
+would be able to properly coordinate with a generic Linux CRIU utility, with
+Docker Checkpoint & Restore, or with future OpenJDK implementations that may
+support checkpoint/restore functionality directly or via the use of
+libraries or system services.
+
+Our hope is to start a project that will focus on specifying a CRaC API, and
+will provide at least one CRaC-supporting checkpoint/restore OpenJDK
+implementation with the hope of eventual upstream inclusion in a future
+OpenJDK version via associated JEPs. We would potentially want to include
+the API in a future Java SE specification as well.
+
+In reality, we expect that more than one checkpoint/restore mechanism may be
+supported, as we have already identified at least two probable modes of
+operation that would be useful for OpenJDK:
+
+- We have prototyped [3] a JDK-driven, modified-CRIU [4] based
+  checkpoint/restore implementation that leverages on-demand paging during
+  startup to deliver very promising start times for e.g microservices
+  running on Quarkus, Micronaut, and Tomcat, and reaching "full speed"
+  condition in sub-50-msec times.[5]
+
+- We anticipate external-to-the-JDK checkpoint/restore implementations such
+  as Docker Checkpoint & Restore [2] and potential possible support within
+  orchestration frameworks (such as future Kubernetes versions) will drive
+  a need for non-Java-specific means of coordinating restoration from
+  checkpointed conditions, and that in such environments JDKs will likely
+  wish to provide external controls (such jcmd or other APIs) that would
+  deal with coordination, but leave the actual checkpointing and restore
+  work to external entities.
+
+
+Below are short summaries of:
+- CRaC API concepts
+- What a prototype OpenJDK implementation looks like
+- Preliminary uses of CRaC API in some application frameworks
+- Some promising preliminary results
+
+
+What do you think? Please chime in.
+
+— Gil.
+
+P.S. Anton Kozlov has done the vast majority of the technical work on this
+so far, and will be joining the discussion here.
+
+—————————————————
+
+CRaC API, conceptually
+
+The high-level concepts of a CRaC API as we see it thus far include:
+
+- Application code (a "resource") can register its interest in coordinating
+  with checkpoint/restore operations.
+
+- When a checkpoint operation attempt is initiated, and before a checkpoint
+  is actually taken, all registered "resources" will be notified that a
+  checkpoint is being attempted via e.g. a beforeCheckpoint() call.
+
+- A JDK may (and likely will) refuse to complete a checkpoint attempt if it
+  encounters any application state that it does not know how to checkpoint
+  or restore.  E.g. a JDK may (and likely will) refuse to complete a
+  checkpoint attempt if any file descriptors that are not private to the
+  JDK itself are open after all registered resources have been notified
+  about the coming checkpoint attempt.
+
+- When a restore operation occurs, all registered resources will be notified
+  via e.g.  an afterRestore() callback.
+
+- Upon being notified of a coming checkpoint, a resource is responsible for
+  destroying any state that may prevent the capturing of a checkpoint (e.g.
+  close any objects that it is responsible and that may keep open file
+  descriptors), as well as for capturing whatever information it may need
+  in order to continue successfully after a restore (e.g. the knowledge of
+  what needs to be "opened" before a restore is complete).
+
+- A resource may cause a checkpoint attempt to fail by throwing an exception
+  when notified.
+
+- Upon being notified that a restore has occurred, a resource is responsible
+  for any required restoration or recreation of the state that it destroyed
+  before the checkpoint occurred. [e.g. opening, binding, listening, and
+  possibly selecting on server ports that were closed for the checkpoint].
+  Note that although restoration is not functionally required in some cases,
+  it may still be beneficial for faster functional startup upon restoration.
+  E.g. outbound connections in a connection pool may not have to be
+  reconnected, as normal connection failure handling will likely deal with
+  their re-establishment in any case. However, initiating such reconnection
+  upon restore will likely improve functional startup time.
+
+- A resource may indicate that a restore attempt should fail by throwing an
+  exception when notified.
+
+—————————————————
+
+Prototype JDK implementation
+
+The prototype JDK implementation [3] implements Coordinated Checkpoint and
+Restore using a modified version of CRIU. A snapshot image of the JDK process
+created at an arbitrary point of time, the image is later used to start a copy
+of the process that is identical to the original one.
+Hotspot change highlights:
+- Adds a Coordinated Checkpoint and Restore implementation for Linux
+    - the checkpoint is performed in a JVM safepoint
+    - currently depends on being able to reuse the checkpointed process pid.
+      [not a problem in containers]
+- Adds a jcmd command for initiating Checkpoint (does not yet pass error
+  information on failure)
+- Enforces no java user-visible file or socket resources are allowed at the
+  checkpoint time. Exception message indicates the problematic resource
+  information.
+- Changes in PerfMemory (/tmp/hsperfdata<user>/<pid>) to work across multiple
+  restores
+- Performs GC on checkpoint and zeros unused heap memory to minimize
+  image size
+
+JDK change highlights:
+- a jdk.crac API providing Checkpoint and Restore notifications
+- uses of the jdk.crac API within the JDK:
+    - support in sun.nio.ch.EPollSelectorImpl to handle epoll and pipe
+    - jar file handling by the JDK
+    - support in java.net.PlainSocketImpl and sun.nio.ch.FileDispatcherImpl
+      to handle internal socket used for preclose
+
+—————————————————
+
+Preliminary uses of CRaC API in some application frameworks
+
+AKA: What modifying common application frameworks to use a proposed CRaC API
+successfully on a prototype OpenJDK implementation looks like.
+
+The CRaC API was used to create modified versions of Quarkus [6], Micrnoaut
+[7] and Tomcat [8] (used by Spring Boot in our examples). The amount of code
+changes required has been surprisingly small.
+
+All three frameworks successfully coordinate checkpoint and restore
+operations with the prototype JDK without requiring any changes to the
+example code that runs on the framework.  It is hoped that a large majority
+of applications that run on such frameworks would not require any CRaC API
+use, and CRaC awareness will only be needed at the framework and potentially
+at the library levels in most cases.
+
+
+—————————————————
+
+Promising Preliminary Results
+
+The current prototype has demonstrated <50msec startup times [5] for fully
+warmed microservice examples running on modified Spring Boot, Quarkus, and
+Micronaut[4].
+
+The examples demonstrate fully-JIT'ed performance out of the box:  the
+immediate throughout of these <50msec starts matches the throughput achieved
+by a normal OpenJDK start only after the latter has fully warmed up, and
+after it had executed >10,000 example operations at significantly slower
+speeds.
+
+
+—————————————————
+
+References
+
+1. https://github.com/checkpoint-restore/criu
+2. https://github.com/docker/cli/blob/master/experimental/checkpoint-restore.md
+3. https://github.com/org-crac/jdk/compare/jdk-base..jdk-crac
+4. https://github.com/org-crac/criu/compare/v3.14..crac
+5. https://github.com/org-crac/docs#results
+6. https://github.com/org-crac/quarkus/compare/master..crac-master
+7. https://github.com/org-crac/micronaut-core/compare/1.3.x..crac-1.3.x
+8. https://github.com/org-crac/tomcat/compare/8.5.x..crac
+9. https://en.wikipedia.org/wiki/Tubthumping
+
+
+## Java Checkpoint/Restore (Christine Flood, FOSDEM 2019)
+
+https://www.youtube.com/watch?v=vK7yY3SYSRU
+
+Time to take checkpoint?
+What if FDs are missing?
+Runtime thread pools depends on number of CPUs?
+ - chf: java restore process
+Random numbers for security becomes predictable?
+
+Container migration time: timens
+
+Root access?
+

@@ -71,6 +71,5 @@ public class App extends AbstractHandler
     public static void main( String[] args ) throws Exception
     {
         serverManager = new ServerManager(8080, new App());
-	jdk.crac.Core.checkpointRestore();
     }
 }

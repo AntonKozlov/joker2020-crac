@@ -25,7 +25,6 @@ class ServerManager implements Resource
         server = new Server(8080);
         server.setHandler(handler);
         server.start();
-        Core.getGlobalContext().register(this);
 
         // beforeCheckpoint implemented in simplest manner: shutdown the jetty
         // server. There may be no non-daemon threads left, so JVM may exit.
@@ -71,5 +70,6 @@ public class App extends AbstractHandler
     public static void main( String[] args ) throws Exception
     {
         serverManager = new ServerManager(8080, new App());
+        jdk.crac.Core.checkpointRestore();
     }
 }
